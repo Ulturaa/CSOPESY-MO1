@@ -35,6 +35,37 @@ struct Process {
     }
 };
 
+//--------------------
+// Config
+//--------------------
+struct Config {
+    int NUM_CORES = 4;
+    std::string scheduler = "rr";
+    int qCycles = 5;
+    int batchProcessFreq = 1;
+    int min_ins = 1000;
+    int max_ins = 2000;
+    int delay_per_exec = 0;
+    
+    bool load(const std::string& path){
+        std::ifstream in(path);
+        if (!in) return false;
+        std::string key, val;
+        while (in >> key >> val) {
+            if (!val.empty() && val.front() == '"') val = val.substr(1, val.size() - 2);
+            if      (key == "num-cpu") NUM_CORES = std::stoi(val);
+            else if (key == "scheduler") scheduler = val;
+            else if (key == "quantum-cycles") qCycles = std::stoull(val);
+            else if (key == "batch-process-freq") batchProcessFreq = std::stoull(val);
+            else if (key == "min-ins") min_ins = std::stoull(val);
+            else if (key == "max-ins") max_ins = std::stoull(val);
+            else if (key == "delay-per-exec" || key == "delays-per-exec") delay_per_exec = std::stoull(val);
+        }
+        return true;
+        // TO DO: Add some form of validation for the correct values. For now its okay.
+    }
+};
+
 class FCFSScheduler {
 private:
     static const int NUM_CORES = 4;
@@ -250,6 +281,8 @@ void printHome(){
 
 int main() {
 
+    Config cfg;
+
     // Assume CPU tick is integer value
     int cpuCycles = 0;
 
@@ -281,6 +314,17 @@ int main() {
         if (input == "initialize") {
             //scheduler.printScreenList();
             std::cout << "INITIALIZE CALLED!\n";
+            if (!cfg.load("config.txt")) {
+                std::cout << "config.txt not found.\n";
+                return 0;
+            }
+            //sched = (cfg.scheduler == "fcfs") ? std::unique_ptr<Scheduler>(new FCFSScheduler(cfg)) : std::unique_ptr<Scheduler>(new RoundRobinScheduler(cfg));
+            //sched->start();
+            //std::cout << "NUM_CORES " << cfg.NUM_CORES << "\n";
+            //std::cout << "Scheduler " << cfg.scheduler << "\n";
+            //std::cout << "min-ins " << cfg.min_ins << "\n";
+            //std::cout << "max-ins " << cfg.max_ins << "\n";
+
         } else if (input == "screen -s") {
             std::cout << "SCREEN -s CALLED!\n";
             // Code for screen -s here
