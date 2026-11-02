@@ -1,350 +1,119 @@
 #include <iostream>
-#include <fstream>
-#include <vector>
-#include <queue>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <atomic>
-#include <chrono>
-#include <iomanip>
 #include <sstream>
 #include <string>
-#include <memory>
+#include "SystemEmulator.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
-enum class ProcessState { READY, RUNNING, FINISHED };
-
-struct Process {
-    std::string name;
-    std::string creationTime;
-    int totalInstructions = 100;
-    std::atomic<int> executedInstructions{0};
-    std::atomic<int> assignedCore{-1};
-    std::atomic<ProcessState> state{ProcessState::READY};
-
-    Process(const std::string& pName, int cmdCount = 100)
-        : name(pName), totalInstructions(cmdCount) {
-        auto now = std::chrono::system_clock::now();
-        std::time_t in_time_t = std::chrono::system_clock::to_time_t(now);
-        std::stringstream ss;
-        ss << std::put_time(std::localtime(&in_time_t), "%m/%d/%Y %I:%M:%S%p");
-        creationTime = ss.str();
-    }
-};
-
-//--------------------
-// Config
-//--------------------
-struct Config {
-    int NUM_CORES = 4;
-    std::string scheduler = "rr";
-    int qCycles = 5;
-    int batchProcessFreq = 1;
-    int min_ins = 1000;
-    int max_ins = 2000;
-    int delay_per_exec = 0;
-    
-    bool load(const std::string& path){
-        std::ifstream in(path);
-        if (!in) return false;
-        std::string key, val;
-        while (in >> key >> val) {
-            if (!val.empty() && val.front() == '"') val = val.substr(1, val.size() - 2);
-            if      (key == "num-cpu") NUM_CORES = std::stoi(val);
-            else if (key == "scheduler") scheduler = val;
-            else if (key == "quantum-cycles") qCycles = std::stoull(val);
-            else if (key == "batch-process-freq") batchProcessFreq = std::stoull(val);
-            else if (key == "min-ins") min_ins = std::stoull(val);
-            else if (key == "max-ins") max_ins = std::stoull(val);
-            else if (key == "delay-per-exec" || key == "delays-per-exec") delay_per_exec = std::stoull(val);
-        }
-        return true;
-        // TO DO: Add some form of validation for the correct values. For now its okay.
-    }
-};
-
-class FCFSScheduler {
-private:
-    static const int NUM_CORES = 4;
-    std::vector<std::thread> workerThreads;
-    std::thread schedulerThread;
-
-    std::queue<std::shared_ptr<Process>> readyQueue;
-    std::vector<std::shared_ptr<Process>> allProcesses;
-
-    std::mutex queueMutex;
-    std::mutex fileMutex;
-    std::condition_variable cvScheduler;
-    std::condition_variable cvWorkers[NUM_CORES];
-
-    std::shared_ptr<Process> coreAssignedProcess[NUM_CORES];
-    bool coreBusy[NUM_CORES] = {false};
-    std::atomic<bool> stopScheduler{false};
-
-    std::string getCurrentFormattedTime() {
-        auto now = std::chrono::system_clock::now();
-        std::time_t in_time_t = std::chrono::system_clock::to_time_t(now);
-        std::stringstream ss;
-        ss << std::put_time(std::localtime(&in_time_t), "%m/%d/%Y %I:%M:%S%p");
-        return ss.str();
-    }
-
-    void executePrintInstruction(const std::shared_ptr<Process>& proc, int coreId) {
-        std::lock_guard<std::mutex> lock(fileMutex);
-        std::ofstream logFile(proc->name + ".txt", std::ios::app);
-        if (logFile.is_open()) {
-            logFile << "(" << getCurrentFormattedTime() << ") Core:" << coreId 
-                    << " \"Hello world from " << proc->name << "!\"\n";
-            logFile.close();
-        }
-    }
-
-    // 1 Scheduler Thread: Assigns processes to free cores in FCFS order
-    void schedulerLoop() {
-        while (!stopScheduler) {
-            std::unique_lock<std::mutex> lock(queueMutex);
-            cvScheduler.wait(lock, [this]() {
-                return stopScheduler || !readyQueue.empty();
-            });
-
-            if (stopScheduler) break;
-
-            for (int coreId = 0; coreId < NUM_CORES; ++coreId) {
-                if (!coreBusy[coreId] && !readyQueue.empty()) {
-                    auto proc = readyQueue.front();
-                    readyQueue.pop();
-
-                    proc->state = ProcessState::RUNNING;
-                    proc->assignedCore = coreId;
-                    coreAssignedProcess[coreId] = proc;
-                    coreBusy[coreId] = true;
-
-                    cvWorkers[coreId].notify_one();
-                }
-            }
-        }
-    }
-
-    // 1 Thread per CPU Worker Core (4 Cores Total)
-    void workerLoop(int coreId) {
-        while (!stopScheduler) {
-            std::shared_ptr<Process> proc = nullptr;
-
-            {
-                std::unique_lock<std::mutex> lock(queueMutex);
-                cvWorkers[coreId].wait(lock, [this, coreId]() {
-                    return stopScheduler || (coreBusy[coreId] && coreAssignedProcess[coreId] != nullptr);
-                });
-
-                if (stopScheduler) break;
-                proc = coreAssignedProcess[coreId];
-            }
-
-            if (proc) {
-                while (proc->executedInstructions < proc->totalInstructions && !stopScheduler) {
-                    //executePrintInstruction(proc, coreId);    // Commented out print command per instructions
-                    proc->executedInstructions++;
-
-                    // Delays each instruction slightly (50ms) so execution spans a few seconds,
-                    // giving time to enter "screen -ls" multiple times.
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                }
-
-                {
-                    std::unique_lock<std::mutex> lock(queueMutex);
-                    proc->state = ProcessState::FINISHED;
-                    coreAssignedProcess[coreId] = nullptr;
-                    coreBusy[coreId] = false;
-                    cvScheduler.notify_one(); // Signal scheduler that core is free
-                }
-            }
-        }
-    }
-
-public:
-    FCFSScheduler() {
-        for (int i = 0; i < NUM_CORES; ++i) {
-            coreAssignedProcess[i] = nullptr;
-        }
-    }
-
-    ~FCFSScheduler() {
-        stop();
-    }
-
-    void start() {
-        stopScheduler = false;
-        for (int i = 0; i < NUM_CORES; ++i) {
-            workerThreads.emplace_back(&FCFSScheduler::workerLoop, this, i);
-        }
-        schedulerThread = std::thread(&FCFSScheduler::schedulerLoop, this);
-    }
-
-    void stop() {
-        stopScheduler = true;
-        cvScheduler.notify_all();
-        for (int i = 0; i < NUM_CORES; ++i) {
-            cvWorkers[i].notify_all();
-        }
-
-        if (schedulerThread.joinable()) {
-            schedulerThread.join();
-        }
-        for (auto& t : workerThreads) {
-            if (t.joinable()) {
-                t.join();
-            }
-        }
-    }
-
-    void createTestProcesses(int count = 10, int commandsPerProcess = 100) {
-        std::unique_lock<std::mutex> lock(queueMutex);
-        for (int i = 1; i <= count; ++i) {
-            std::stringstream ss;
-            ss << "process" << std::setw(2) << std::setfill('0') << i;
-            auto proc = std::make_shared<Process>(ss.str(), commandsPerProcess);
-
-            // Create initial text file header matching required format
-            // Commented out text file creation per instructions
-            /*
-            std::ofstream logFile(proc->name + ".txt", std::ios::trunc);
-            if (logFile.is_open()) {
-                logFile << "Process name: " << proc->name << "\n";
-                logFile << "Logs:\n\n";
-                logFile.close();
-            }
-            */
-            
-            allProcesses.push_back(proc);
-            readyQueue.push(proc);
-        }
-        cvScheduler.notify_one();
-    }
-
-    void printScreenList() {
-        std::unique_lock<std::mutex> lock(queueMutex);
-
-        std::cout << "--------------------------------------------------\n";
-        std::cout << "Running processes:\n";
-        for (const auto& proc : allProcesses) {
-            if (proc->state == ProcessState::RUNNING) {
-                std::cout << std::left << std::setw(12) << proc->name
-                          << "(" << proc->creationTime << ")    "
-                          << "Core: " << proc->assignedCore << "    "
-                          << proc->executedInstructions << " / " << proc->totalInstructions << "\n";
-            }
-        }
-
-        std::cout << "\nFinished processes:\n";
-        for (const auto& proc : allProcesses) {
-            if (proc->state == ProcessState::FINISHED) {
-                std::cout << std::left << std::setw(12) << proc->name
-                          << "(" << proc->creationTime << ")    "
-                          << "Finished    "
-                          << proc->executedInstructions << " / " << proc->totalInstructions << "\n";
-            }
-        }
-        std::cout << "--------------------------------------------------\n\n";
-    }
-};
-
 void printBanner() {
-    #ifdef _WIN32
-        UINT oldCP = GetConsoleOutputCP();   // save current code page
-        SetConsoleOutputCP(CP_UTF8);         // enable UTF-8
-    #endif
+#ifdef _WIN32
+    UINT oldCP = GetConsoleOutputCP();
+    SetConsoleOutputCP(CP_UTF8);
+#endif
 
-    std::cout << "    ╱|、\n";
-    std::cout << "  (˚ˎ 。7     CSOPESY MO1\n";
-    std::cout << "   |、˜〵     Process Scheduler\n";
-    std::cout << "  じしˍ,)ノ\n\n";
-    std::cout.flush();
+    std::cout << "  ___  ____   ___  ____  _____ ____  _  _\n";
+    std::cout << " / __)/ ___)/ _ \\(  _ \\(  _  )/ ___)( \\/ )\n";
+    std::cout << "( (__ \\___ \\( (_) ))___/ )(_)( \\___ \\ \\  /\n";
+    std::cout << " \\___)(____/ \\___/(__)  (____/ (____/ (__/ \n\n";
+    std::cout << "Welcome to CSOPESY Emulator!\n";
+    std::cout << "Developers:\n  Del Gallego, Neil Patrick\n";
+    std::cout << "Last updated: 01-18-2024\n\n";
 
-    #ifdef _WIN32
-        SetConsoleOutputCP(oldCP);           // disable UTF-8 (restore original)
-    #endif
+#ifdef _WIN32
+    SetConsoleOutputCP(oldCP);
+#endif
 }
 
-void printHome(){
-    printBanner();
-    std::cout << "Commands:\n";
-    std::cout << "  initialize      : Initialize the processor configuration of the application -- MUST EXECUTE FIRST!\n";
-    std::cout << "  screen -s       : Create a new process via 'screen -s <process name>'\n";
-    std::cout << "  screen -ls      : View running and finished processes\n";
-    std::cout << "  scheduler-start : Continuously generates a batch of dummy processes for the CPU scheduler\n";
-    std::cout << "  scheduler-end   : Stop generating dummy processes\n";
-    std::cout << "  exit            : Exit program\n\n";
+void enterProcessScreen(const std::shared_ptr<Process>& proc) {
+    while (true) {
+        {
+            std::lock_guard<std::mutex> lock(proc->processMutex);
+            std::cout << "\nProcess name: " << proc->name << "\n";
+            std::cout << "ID: " << proc->id << "\n";
+            std::cout << "Logs:\n";
+            for (const auto& log : proc->logs) {
+                std::cout << log << "\n";
+            }
+            if (proc->state == ProcessState::FINISHED) {
+                std::cout << "\nFinished!\n";
+            } else {
+                std::cout << "\nCurrent instruction line: " << proc->currentLine << "\n";
+                std::cout << "Lines of code: " << proc->totalLines << "\n";
+            }
+        }
+
+        std::cout << "\nroot:\\> ";
+        std::string cmd;
+        if (!std::getline(std::cin, cmd)) break;
+
+        if (cmd == "process-smi") {
+            continue;
+        } else if (cmd == "exit") {
+            break;
+        } else if (!cmd.empty()) {
+            std::cout << "Unknown screen command: " << cmd << "\n";
+        }
+    }
 }
 
 int main() {
-
-    Config cfg;
-
-    // Assume CPU tick is integer value
-    int cpuCycles = 0;
-
-    // Replace with correct implementation
-    bool osRunning = true;
-    
-
-    //while(osRunning == true){
-    //    cpuCycles++;
-    //}
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-
-    FCFSScheduler scheduler;
-
-    // Start 1 scheduler thread and 4 core worker threads
-    //scheduler.start();
-
-    // Homework Test Case: Create 10 processes with 100 print commands each
-    //scheduler.createTestProcesses(10, 100);
-
-    // Print top screen
-    printHome();
+    SystemEmulator emulator;
+    printBanner();
 
     std::string input;
     while (true) {
-        std::cout << "root@emulator:~# ";
+        std::cout << "root:\\> ";
         if (!std::getline(std::cin, input)) break;
 
-        if (input == "initialize") {
-            //scheduler.printScreenList();
-            std::cout << "INITIALIZE CALLED!\n";
-            if (!cfg.load("config.txt")) {
-                std::cout << "config.txt not found.\n";
-                return 0;
-            }
-            //sched = (cfg.scheduler == "fcfs") ? std::unique_ptr<Scheduler>(new FCFSScheduler(cfg)) : std::unique_ptr<Scheduler>(new RoundRobinScheduler(cfg));
-            //sched->start();
-            //std::cout << "NUM_CORES " << cfg.NUM_CORES << "\n";
-            //std::cout << "Scheduler " << cfg.scheduler << "\n";
-            //std::cout << "min-ins " << cfg.min_ins << "\n";
-            //std::cout << "max-ins " << cfg.max_ins << "\n";
+        std::stringstream ss(input);
+        std::string cmd;
+        ss >> cmd;
 
-        } else if (input == "screen -s") {
-            std::cout << "SCREEN -s CALLED!\n";
-            // Code for screen -s here
-        } else if (input == "screen -ls") {
-            std::cout << "SCREEN -ls CALLED!\n";
-            // Code for screen -s here
-        } else if (input == "scheduler-start") {
-            std::cout << "scheduler-start CALLED!\n";
-            // Code for scheduler-start here
-        } else if (input == "scheduler-end") {
-            std::cout << "SCHEDULER-end CALLED!\n";
-            // Code for scheduler-end here
-        }else if (input == "exit") {
+        if (cmd == "exit") {
             break;
-        } else if (!input.empty()) {
-            std::cout << "Unknown command: " << input << "\n";
+        } else if (cmd == "initialize") {
+            if (emulator.initialize()) {
+                std::cout << "Processor configuration initialized successfully.\n";
+            } else {
+                std::cout << "Error: Could not load config.txt.\n";
+            }
+        } else if (!emulator.isInitialized()) {
+            std::cout << "Please initialize the application first using 'initialize'.\n";
+        } else if (cmd == "screen") {
+            std::string flag, procName;
+            ss >> flag >> procName;
+
+            if (flag == "-s" && !procName.empty()) {
+                emulator.createProcess(procName);
+                auto proc = emulator.findProcess(procName);
+                if (proc) enterProcessScreen(proc);
+            } else if (flag == "-r" && !procName.empty()) {
+                auto proc = emulator.findProcess(procName);
+                if (proc && proc->state != ProcessState::FINISHED) {
+                    enterProcessScreen(proc);
+                } else {
+                    std::cout << "Process " << procName << " not found.\n";
+                }
+            } else if (flag == "-ls") {
+                std::cout << emulator.getScreenListOutput() << "\n";
+            } else {
+                std::cout << "Usage: screen -s <name> | screen -r <name> | screen -ls\n";
+            }
+        } else if (cmd == "scheduler-start") {
+            emulator.startSchedulerGenerator();
+            std::cout << "Batch process generator started.\n";
+        } else if (cmd == "scheduler-stop") {
+            emulator.stopSchedulerGenerator();
+            std::cout << "Batch process generator stopped.\n";
+        } else if (cmd == "report-util") {
+            emulator.generateReportUtil();
+        } else if (!cmd.empty()) {
+            std::cout << "Unknown command: " << cmd << "\n";
         }
     }
 
-    //scheduler.stop();
-
+    emulator.stop();
     return 0;
 }
