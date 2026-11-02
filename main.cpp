@@ -15,7 +15,7 @@
 #include <windows.h>
 #endif
 
-enum class ProcessState { READY, RUNNING, FINISHED };
+enum class ProcessState { NEW, READY, RUNNING, FINISHED };
 
 struct Process {
     std::string name;
@@ -23,7 +23,7 @@ struct Process {
     int totalInstructions = 100;
     std::atomic<int> executedInstructions{0};
     std::atomic<int> assignedCore{-1};
-    std::atomic<ProcessState> state{ProcessState::READY};
+    std::atomic<ProcessState> state{ProcessState::NEW};
 
     Process(const std::string& pName, int cmdCount = 100)
         : name(pName), totalInstructions(cmdCount) {
