@@ -18,8 +18,11 @@ void printBanner() {
     std::cout << "( (__ \\___ \\( (_) ))___/ )(_)( \\___ \\ \\  /\n";
     std::cout << " \\___)(____/ \\___/(__)  (____/ (____/ (__/ \n\n";
     std::cout << "Welcome to CSOPESY Emulator!\n";
-    std::cout << "Developers:\n  Del Gallego, Neil Patrick\n";
-    std::cout << "Last updated: 01-18-2024\n\n";
+    std::cout << "Developers:\n";
+    std::cout << "Malicsi, Patrick\n";
+    std::cout << "Marinas, Mervyn\n";
+    std::cout << "Dumaran, Marc\n";
+    std::cout << "Last updated: 11-02-2026\n\n";
 
 #ifdef _WIN32
     SetConsoleOutputCP(oldCP);
