@@ -26,18 +26,22 @@ void RoundRobinScheduler::executeInstruction(const std::shared_ptr<Process>& pro
         ss << std::put_time(std::localtime(&in_time_t), "%m/%d/%Y %I:%M:%S%p");
         return ss.str();
     };
-
+    
     if (inst.type == InstructionType::PRINT) {
         proc->addLog(getCurrentTimeFormatted(), coreId, "Hello world from " + proc->name + "!");
     } else if (inst.type == InstructionType::DECLARE) {
         proc->variables[inst.var1] = clampUint16(inst.val1);
+        //proc->addLog(getCurrentTimeFormatted(), coreId, "DECLARE from " + proc->name + " | var = " + std::to_string(inst.val1));
     } else if (inst.type == InstructionType::ADD) {
         int res = proc->variables[inst.var1] + inst.val1 + inst.val2;
         proc->variables[inst.var1] = clampUint16(res);
+        //proc->addLog(getCurrentTimeFormatted(), coreId, "ADD from " + proc->name + " | " + inst.var2 + " + " + inst.var3 + " = " + inst.var1);
     } else if (inst.type == InstructionType::SUBTRACT) {
         int res = proc->variables[inst.var1] - inst.val1 - inst.val2;
         proc->variables[inst.var1] = clampUint16(res);
+        //proc->addLog(getCurrentTimeFormatted(), coreId, "SUBTRACT from " + proc->name + " | " + inst.var2 + " - " + inst.var3 + " = " + inst.var1);
     } else if (inst.type == InstructionType::SLEEP) {
+        //proc->addLog(getCurrentTimeFormatted(), coreId, "SLEEP from " + pro->name);
         std::this_thread::sleep_for(std::chrono::milliseconds(inst.sleepTicks * 10));
     }
 }

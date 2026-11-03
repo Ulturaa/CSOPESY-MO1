@@ -11,8 +11,14 @@ SystemEmulator::~SystemEmulator() {
 }
 
 bool SystemEmulator::initialize() {
-    if (initialized) return true;
-    if (!config.load("config.txt")) return false;
+    if (initialized) {
+        std::cout << "ERROR: System already initialized. \n";
+        return false;
+    }
+    if (!config.load("config.txt")) {
+        std::cout << " | System failed to initialize.\n";
+        return false;
+    }
 
     if (config.scheduler == SchedulerAlgorithm::FCFS) {
         scheduler = std::unique_ptr<Scheduler>(new FCFSScheduler(config));

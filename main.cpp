@@ -16,7 +16,7 @@ void printBanner() {
     std::cout << "  ___  ____   ___  ____  _____ ____  _  _\n";
     std::cout << " / __)/ ___)/ _ \\(  _ \\(  _  )/ ___)( \\/ )\n";
     std::cout << "( (__ \\___ \\( (_) ))___/ )(_)( \\___ \\ \\  /\n";
-    std::cout << " \\___)(____/ \\___/(__)  (____/ (____/ (__/ \n\n";
+    std::cout << " \\___)(____/\\___/(__)  (____/ (____/ (__/ \n\n";
     std::cout << "Welcome to CSOPESY Emulator!\n";
     std::cout << "Developers:\n";
     std::cout << "Malicsi, Patrick\n";
@@ -77,10 +77,8 @@ int main() {
         if (cmd == "exit") {
             break;
         } else if (cmd == "initialize") {
-            if (emulator.initialize()) {
+            if(emulator.initialize()) {
                 std::cout << "Processor configuration initialized successfully.\n";
-            } else {
-                std::cout << "Error: Could not load config.txt.\n";
             }
         } else if (!emulator.isInitialized()) {
             std::cout << "Please initialize the application first using 'initialize'.\n";

@@ -107,7 +107,7 @@ delays-per-exec 50
 | Command | Action |
 | :--- | :--- |
 | `process-smi` | Prints process ID, total instruction lines, current execution line, and timestamped log outputs. |
-| `exit` | Detaches from the current process screen back to the main console menu. |
+| `exit` | Detachees from the current process screen back to the main console menu. |
 
 ---
 

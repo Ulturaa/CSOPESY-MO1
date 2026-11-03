@@ -30,7 +30,7 @@ public:
     std::map<std::string, uint16_t> variables;
     std::mutex processMutex;
 
-    Process(int pId, const std::string& pName, const std::vector<Instruction>& insts, int maxAllowedLines = 2000)
+    Process(int pId, const std::string& pName, const std::vector<Instruction>& insts, int maxAllowedLines = 100)
         : id(pId), name(pName) {
         
         auto now = std::chrono::system_clock::now();
