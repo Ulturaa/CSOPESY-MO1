@@ -1,6 +1,8 @@
 #include "RoundRobinScheduler.h"
 #include <chrono>
 #include <iostream>
+#include <sstream>
+#include <iomanip>
 
 RoundRobinScheduler::RoundRobinScheduler(const Config& cfg) : config(cfg) {
     cvWorkers = std::vector<std::condition_variable>(config.numCpu);
@@ -12,10 +14,10 @@ RoundRobinScheduler::~RoundRobinScheduler() {
     stop();
 }
 
-uint16_t RoundRobinScheduler::clampUint16(int32_t val) {
+uint32_t RoundRobinScheduler::clampUint32(int64_t val) {
     if (val < 0) return 0;
-    if (val > 65535) return 65535;
-    return static_cast<uint16_t>(val);
+    if (val > 4294967295LL) return 4294967295U;
+    return static_cast<uint32_t>(val);
 }
 
 void RoundRobinScheduler::executeInstruction(const std::shared_ptr<Process>& proc, const Instruction& inst, int coreId) {
@@ -26,23 +28,18 @@ void RoundRobinScheduler::executeInstruction(const std::shared_ptr<Process>& pro
         ss << std::put_time(std::localtime(&in_time_t), "%m/%d/%Y %I:%M:%S%p");
         return ss.str();
     };
-    
+
     if (inst.type == InstructionType::PRINT) {
-        proc->addLog(getCurrentTimeFormatted(), coreId, "Hello world from " + proc->name + "!");
-    } else if (inst.type == InstructionType::DECLARE) {
-        proc->variables[inst.var1] = clampUint16(inst.val1);
-        //proc->addLog(getCurrentTimeFormatted(), coreId, "DECLARE from " + proc->name + " | var = " + std::to_string(inst.val1));
+        if (!inst.var1.empty() && proc->variables.find(inst.var1) != proc->variables.end()) {
+            proc->addLog(getCurrentTimeFormatted(), coreId, "Value from: " + std::to_string(proc->variables[inst.var1]));
+        } else {
+            proc->addLog(getCurrentTimeFormatted(), coreId, "Hello world from " + proc->name + "!");
+        }
     } else if (inst.type == InstructionType::ADD) {
-        int res = proc->variables[inst.var1] + inst.val1 + inst.val2;
-        proc->variables[inst.var1] = clampUint16(res);
-        //proc->addLog(getCurrentTimeFormatted(), coreId, "ADD from " + proc->name + " | " + inst.var2 + " + " + inst.var3 + " = " + inst.var1);
-    } else if (inst.type == InstructionType::SUBTRACT) {
-        int res = proc->variables[inst.var1] - inst.val1 - inst.val2;
-        proc->variables[inst.var1] = clampUint16(res);
-        //proc->addLog(getCurrentTimeFormatted(), coreId, "SUBTRACT from " + proc->name + " | " + inst.var2 + " - " + inst.var3 + " = " + inst.var1);
+        int64_t res = static_cast<int64_t>(proc->variables[inst.var1]) + inst.val1;
+        proc->variables[inst.var1] = clampUint32(res);
     } else if (inst.type == InstructionType::SLEEP) {
-        //proc->addLog(getCurrentTimeFormatted(), coreId, "SLEEP from " + pro->name);
-        std::this_thread::sleep_for(std::chrono::milliseconds(inst.sleepTicks * 10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(inst.sleepTicks * 5));
     }
 }
 
@@ -70,6 +67,8 @@ void RoundRobinScheduler::workerLoop(int coreId) {
 
                 if (config.delayPerExec > 0) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(config.delayPerExec * 5));
+                } else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 }
 
                 if (executedQuantum >= config.quantumCycles) {

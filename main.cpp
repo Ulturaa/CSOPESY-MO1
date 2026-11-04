@@ -1,6 +1,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <algorithm>
 #include "SystemEmulator.h"
 
 #ifdef _WIN32
@@ -35,10 +36,15 @@ void enterProcessScreen(const std::shared_ptr<Process>& proc) {
             std::lock_guard<std::mutex> lock(proc->processMutex);
             std::cout << "\nProcess name: " << proc->name << "\n";
             std::cout << "ID: " << proc->id << "\n";
-            std::cout << "Logs:\n";
-            for (const auto& log : proc->logs) {
-                std::cout << log << "\n";
+            std::cout << "Logs (showing latest entries):\n";
+
+            // Cap output to the latest 20 log lines to eliminate terminal flooding when delay-per-exec is 0
+            int totalLogs = static_cast<int>(proc->logs.size());
+            int startIdx = std::max(0, totalLogs - 20);
+            for (int i = startIdx; i < totalLogs; ++i) {
+                std::cout << proc->logs[i] << "\n";
             }
+
             if (proc->state == ProcessState::FINISHED) {
                 std::cout << "\nFinished!\n";
             } else {
@@ -74,10 +80,20 @@ int main() {
         std::string cmd;
         ss >> cmd;
 
+        // Alias screen-ls (without space) to screen -ls
+        if (cmd == "screen-ls") {
+            if (emulator.isInitialized()) {
+                std::cout << emulator.getScreenListOutput() << "\n";
+            } else {
+                std::cout << "Please initialize the application first using 'initialize'.\n";
+            }
+            continue;
+        }
+
         if (cmd == "exit") {
             break;
         } else if (cmd == "initialize") {
-            if(emulator.initialize()) {
+            if (emulator.initialize()) {
                 std::cout << "Processor configuration initialized successfully.\n";
             }
         } else if (!emulator.isInitialized()) {
@@ -102,7 +118,8 @@ int main() {
             } else {
                 std::cout << "Usage: screen -s <name> | screen -r <name> | screen -ls\n";
             }
-        } else if (cmd == "scheduler-start") {
+        // Accepts both scheduler-start and scheduler-test aliases
+        } else if (cmd == "scheduler-start" || cmd == "scheduler-test") {
             emulator.startSchedulerGenerator();
             std::cout << "Batch process generator started.\n";
         } else if (cmd == "scheduler-stop") {

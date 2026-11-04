@@ -2,12 +2,11 @@
 #define ROUNDROBINSCHEDULER_H
 
 #include "Scheduler.h"
-#include <queue>
 #include <vector>
+#include <queue>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
-#include <atomic>
 
 class RoundRobinScheduler : public Scheduler {
 private:
@@ -16,18 +15,19 @@ private:
     std::thread schedulerThread;
 
     std::queue<std::shared_ptr<Process>> readyQueue;
-    std::mutex queueMutex;
+    std::vector<std::shared_ptr<Process>> coreAssignments;
+    std::vector<bool> coreBusy;
+
+    mutable std::mutex queueMutex;
     std::condition_variable cvScheduler;
     std::vector<std::condition_variable> cvWorkers;
 
-    std::vector<std::shared_ptr<Process>> coreAssignments;
-    std::vector<bool> coreBusy;
-    std::atomic<bool> running{false};
+    bool running = false;
 
-    uint16_t clampUint16(int32_t val);
-    void executeInstruction(const std::shared_ptr<Process>& proc, const Instruction& inst, int coreId);
     void workerLoop(int coreId);
     void schedulerLoop();
+    void executeInstruction(const std::shared_ptr<Process>& proc, const Instruction& inst, int coreId);
+    uint32_t clampUint32(int64_t val);
 
 public:
     RoundRobinScheduler(const Config& cfg);
@@ -39,4 +39,4 @@ public:
     int getUsedCoresCount() const override;
 };
 
-#endif // ROUNDROBINSCHEDULER_H
+#endif

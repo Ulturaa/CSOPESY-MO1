@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sstream>
 #include <chrono>
+#include <iomanip>
 
 SystemEmulator::~SystemEmulator() {
     stop();
@@ -12,11 +13,11 @@ SystemEmulator::~SystemEmulator() {
 
 bool SystemEmulator::initialize() {
     if (initialized) {
-        std::cout << "ERROR: System already initialized. \n";
+        std::cout << "ERROR: System already initialized.\n";
         return false;
     }
     if (!config.load("config.txt")) {
-        std::cout << " | System failed to initialize.\n";
+        std::cout << "System failed to initialize.\n";
         return false;
     }
 
@@ -49,7 +50,8 @@ void SystemEmulator::stop() {
 
 void SystemEmulator::generatorLoop() {
     while (running) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(config.batchProcessFreq * 200));
+        // Sleep in seconds according to config.batchProcessFreq (1 tick = 1 second)
+        std::this_thread::sleep_for(std::chrono::seconds(config.batchProcessFreq));
         if (!generatorActive) continue;
 
         std::stringstream ss;
@@ -60,11 +62,15 @@ void SystemEmulator::generatorLoop() {
 
 void SystemEmulator::createProcess(const std::string& name) {
     std::unique_lock<std::mutex> lock(systemMutex);
-    int insCount = config.minIns + (rand() % (config.maxIns - config.minIns + 1));
-    auto insts = generateRandomInstructions(insCount, name);
+    int insCount = config.minIns;
+    if (config.maxIns > config.minIns) {
+        insCount += (rand() % (config.maxIns - config.minIns + 1));
+    }
 
+    auto insts = generateRandomInstructions(insCount, name);
     auto proc = std::make_shared<Process>(processIdCounter++, name, insts);
     allProcesses.push_back(proc);
+
     if (scheduler) {
         scheduler->addProcess(proc);
     }
