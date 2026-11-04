@@ -30,7 +30,7 @@ public:
     std::map<std::string, uint16_t> variables;
     std::mutex processMutex;
 
-    Process(int pId, const std::string& pName, const std::vector<Instruction>& insts, int maxAllowedLines = 100)
+    Process(int pId, const std::string& pName, const std::vector<Instruction>& insts, int maxAllowedLines = 200000)
         : id(pId), name(pName) {
         
         auto now = std::chrono::system_clock::now();
@@ -39,7 +39,9 @@ public:
         ss << std::put_time(std::localtime(&in_time_t), "%m/%d/%Y %I:%M:%S%p");
         creationTime = ss.str();
 
-        // Safely unroll instructions up to maxAllowedLines (prevents bad_alloc)
+        // Q5 Spec Requirement: Variable x initialized to 0
+        variables["x"] = 0;
+
         flattenInstructions(insts, maxAllowedLines);
         totalLines = static_cast<int>(flattenedInstructions.size());
     }
@@ -54,9 +56,7 @@ public:
 private:
     void flattenInstructions(const std::vector<Instruction>& list, int maxAllowedLines) {
         for (const auto& inst : list) {
-            if (static_cast<int>(flattenedInstructions.size()) >= maxAllowedLines) {
-                break; // Stop unrolling if line cap is reached
-            }
+            if (static_cast<int>(flattenedInstructions.size()) >= maxAllowedLines) break;
 
             if (inst.type == InstructionType::FOR) {
                 for (int r = 0; r < inst.loopCount; ++r) {
